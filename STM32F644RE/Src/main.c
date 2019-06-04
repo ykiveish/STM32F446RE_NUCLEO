@@ -19,6 +19,8 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
+#include <stdio.h>
+#include <string.h>
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -28,12 +30,30 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+	#define SPI_TIMEOUT_MAX				0x1000
+	#define CMD_LENGTH					((uint16_t)0x0004)
 
+	#define COMM_SPI_READ				0x03
+	#define COMM_SPI_WRITE				0x02
+	#define DUMMY_BYTE					0xFF
+
+	#define BYTE_TEST               	0x0064      			// byte order test register
+
+	#define Tout 						1000
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+typedef union {
+    unsigned short  Word;
+    unsigned char   Byte[2];
+} UWORD;
 
+typedef union {
+    unsigned long   Long;
+    unsigned short  Word[2];
+    unsigned char   Byte[4];
+} ULONG;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -48,7 +68,7 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-
+unsigned long SPIReadRegisterDirect(unsigned short Address, unsigned char Len);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,7 +83,33 @@ static void MX_SPI2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+unsigned long SPIReadRegisterDirect (unsigned short Address, unsigned char Len) {
+	ULONG Command, Result;
+	UWORD Addr;
 
+	Addr.Word = Address;
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+
+	Command.Byte[0] = COMM_SPI_READ;
+	Command.Byte[1] = Addr.Byte[1];
+	Command.Byte[2] = Addr.Byte[0];
+
+	if (HAL_SPI_Transmit(&hspi2, Command.Byte, 3, SPI_TIMEOUT_MAX) != HAL_OK) {
+		HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+	}
+
+	// SPI_TransferTx(COMM_SPI_READ);                            // SPI read command
+	// SPI_TransferTx(Addr.Byte[1]);                             // address of the register
+	// SPI_TransferTxLast(Addr.Byte[0]);                         // to read, MsByte first
+
+	if (HAL_SPI_Receive(&hspi2, Result.Byte, Len, SPI_TIMEOUT_MAX) != HAL_OK) {
+		HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Receive\r\n", 24, HAL_MAX_DELAY);
+	}
+
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+
+	return Result.Long;                                       // return the result
+}
 /* USER CODE END 0 */
 
 /**
@@ -99,18 +145,32 @@ int main(void)
   MX_USART3_UART_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-  char buffer[] = "UART Test\r\n";
-  uint8_t pin_state = 0;
+  char buffer[32] = {0};
+  // uint8_t pin_state = 0;
+
+
+  ULONG TempLong;
+  unsigned short i = 0;
+  do {
+	TempLong.Long = SPIReadRegisterDirect (BYTE_TEST, 4);
+	sprintf(buffer, "SPI# 0x%08x \r\n", TempLong.Long);
+	HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
+	i++;
+	// HAL_UART_Transmit(&huart3, (uint8_t *)TempLong.Byte, sizeof(TempLong.Byte), HAL_MAX_DELAY);
+  } while ((TempLong.Long != 0x87654321) && (i != Tout));
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  memset(buffer, 0, 32);
+	  sprintf(buffer, "UART Test \r\n");
 	  HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
 	  uint32_t current_tick = HAL_GetTick();
-	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, pin_state);
-	  pin_state = 1 - pin_state;
+	  // HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, pin_state);
+	  // pin_state = 1 - pin_state;
 	  while (HAL_GetTick() <= (current_tick + 500));
     /* USER CODE END WHILE */
 
@@ -183,10 +243,10 @@ static void MX_SPI2_Init(void)
   hspi2.Init.Mode = SPI_MODE_MASTER;
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
   hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;

@@ -1,7 +1,7 @@
 [PreviousGenFiles]
-HeaderPath=C:/Users/kiveisha/workspace/STM32F644RE_UART/Inc
+HeaderPath=C:/Users/kiveisha/workspace/STM32F644RE/Inc
 HeaderFiles=stm32f4xx_it.h;stm32f4xx_hal_conf.h;main.h;
-SourcePath=C:/Users/kiveisha/workspace/STM32F644RE_UART/Src
+SourcePath=C:/Users/kiveisha/workspace/STM32F644RE/Src
 SourceFiles=stm32f4xx_it.c;stm32f4xx_hal_msp.c;main.c;
 
 [PreviousLibFiles]
