@@ -195,6 +195,10 @@ unsigned long SPIReadRegisterIndirect (unsigned short Address, unsigned char Len
 
   Addr.Word = Address;
 
+  /*
+	CSR_BUSY	|	R_nW	|	RESERVED	|	CSR_SIZE	|	CSR_ADDR
+	31			|	30		|	29:19		|	18:16		|	15:0
+   */
   TempLong.Byte[0] = Addr.Byte[0];                          // address of the register
   TempLong.Byte[1] = Addr.Byte[1];                          // to read, LsByte first
   TempLong.Byte[2] = Len;                                   // number of bytes to read
@@ -243,7 +247,7 @@ void SPIWriteProcRamFifo() {
   // abort any possible pending transfer
   SPIWriteRegisterDirect(ECAT_PRAM_WR_CMD, PRAM_ABORT);
   SPIWriteRegisterDirect(ECAT_PRAM_WR_ADDR_LEN, (0x00001200 | (((uint32_t)TOT_BYTE_NUM_IN) << 16)));
-  // start command
+  // start command (set PRAM_WRITE_BUSY)
   SPIWriteRegisterDirect(ECAT_PRAM_WR_CMD, 0x80000000);
 
   do {
@@ -252,18 +256,17 @@ void SPIWriteProcRamFifo() {
 
   Buffer[0] = COMM_SPI_WRITE;
   Buffer[1] = 0x00; // address of the write fifo
-  Buffer[2] = 0x20; // MsByte first
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
-
+  Buffer[2] = 0x20; // MsByte first (ECAT_PRAM_WR_DATA 020h-03Ch [ETHERCAT PROCESS RAM WRITE DATA FIFO])
+  
   // transfer the data
   for (i = 0; i < FST_BYTE_NUM_ROUND_IN; i++) {
 	  Buffer[3 + i] = BufferIn.Byte[i];
   }
-
+  
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
   if (HAL_SPI_Transmit(&hspi2, Buffer, FST_BYTE_NUM_ROUND_IN + 3, SPI_TIMEOUT_MAX) != HAL_OK) {
   	HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
   }
-
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 }
 
@@ -402,6 +405,8 @@ int main(void)
 	  } else {
 		  Operational = 0;
 	  }
+
+	  SPIWriteProcRamFifo();
 
 	  memset(buffer, 0, 64);
 	  sprintf(buffer, "WatchDog: %d, Operational: %d\r\n", WatchDog, Operational);
