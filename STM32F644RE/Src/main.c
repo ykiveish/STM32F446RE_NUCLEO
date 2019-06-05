@@ -19,27 +19,61 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include <stdio.h>
-#include <string.h>
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-	#define SPI_TIMEOUT_MAX				0x1000
-	#define CMD_LENGTH					((uint16_t)0x0004)
+#define SPI_TIMEOUT_MAX				0x1000
+#define CMD_LENGTH					((uint16_t)0x0004)
 
-	#define COMM_SPI_READ				0x03
-	#define COMM_SPI_WRITE				0x02
-	#define DUMMY_BYTE					0xFF
+#define COMM_SPI_READ				0x03
+#define COMM_SPI_WRITE				0x02
 
-	#define BYTE_TEST               	0x0064      			// byte order test register
+#define ESC_WRITE 		   			0x80
+#define ESC_READ 		   			0xC0
+#define ECAT_CSR_BUSY     			0x80
 
-	#define Tout 						1000
+#define AL_CONTROL              	0x0120      			// AL control
+#define AL_STATUS               	0x0130      			// AL status
+#define AL_STATUS_CODE          	0x0134      			// AL status code
+#define AL_EVENT                	0x0220      			// AL event request
+#define AL_EVENT_MASK           	0x0204      			// AL event interrupt mask
+
+#define TOT_BYTE_NUM_OUT			1
+#define TOT_BYTE_NUM_IN				8
+#define TOT_BYTE_NUM_ROUND_OUT		4
+#define TOT_BYTE_NUM_ROUND_IN		8
+
+#define PRAM_ABORT        			0x40000000
+#define PRAM_BUSY         			0x80
+#define PRAM_AVAIL        			0x01
+#define READY             			0x08
+#define DUMMY_BYTE					0xFF
+
+#define BYTE_TEST               	0x0064      			// byte order test register
+#define HW_CFG                  	0x0074      			// hardware configuration register
+#define RESET_CTL               	0x01F8      			// reset register
+#define ECAT_CSR_DATA           	0x0300      			// EtherCAT CSR Interface Data Register
+#define ECAT_CSR_CMD            	0x0304      			// EtherCAT CSR Interface Command Register
+#define ECAT_PRAM_RD_ADDR_LEN   	0x0308      			// EtherCAT Process RAM Read Address and Length Register
+#define ECAT_PRAM_RD_CMD        	0x030C      			// EtherCAT Process RAM Read Command Register
+#define ECAT_PRAM_WR_ADDR_LEN   	0x0310      			// EtherCAT Process RAM Write Address and Length Register
+#define ECAT_PRAM_WR_CMD        	0x0314      			// EtherCAT Process RAM Write Command Register
+#define WDOG_STATUS             	0x0440      			// watch dog status
+
+#define ESM_INIT                	0x01          			// state machine control
+#define ESM_PREOP               	0x02          			// (state request)
+#define ESM_BOOT                	0x03          			//
+#define ESM_SAFEOP              	0x04          			// safe-operational
+#define ESM_OP                  	0x08          			// operational
+
+#define Tout 						1000
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -54,6 +88,24 @@ typedef union {
     unsigned short  Word[2];
     unsigned char   Byte[4];
 } ULONG;
+
+typedef union {
+	uint8_t  Byte [TOT_BYTE_NUM_ROUND_OUT];
+	struct {
+		uint8_t     Leds;
+	} Cust;
+} PROCBUFFER_OUT;
+
+typedef union {
+	uint8_t  Byte [TOT_BYTE_NUM_ROUND_IN];
+	struct {
+		uint16_t    Analog_0;
+		uint16_t    Analog_1;
+		uint16_t    Bit16_RisingTestRamp;
+		uint8_t     DipSwitches;
+		uint8_t     Bit8_FallingTestRamp;
+	} Cust;
+} PROCBUFFER_IN;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,6 +121,9 @@ UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 unsigned long SPIReadRegisterDirect(unsigned short Address, unsigned char Len);
+void SPIWriteRegisterDirect (unsigned short Address, unsigned long DataOut);
+unsigned long SPIReadRegisterIndirect (unsigned short Address, unsigned char Len);
+void SPIWriteRegisterIndirect (unsigned long DataOut, unsigned short Address, unsigned char Len);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -78,7 +133,9 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
-
+uint8_t 		IsDeviceInitiated = 0x1;
+PROCBUFFER_OUT 	BufferOut;
+PROCBUFFER_IN 	BufferIn;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -98,18 +155,154 @@ unsigned long SPIReadRegisterDirect (unsigned short Address, unsigned char Len) 
 		HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
 	}
 
-	// SPI_TransferTx(COMM_SPI_READ);                            // SPI read command
-	// SPI_TransferTx(Addr.Byte[1]);                             // address of the register
-	// SPI_TransferTxLast(Addr.Byte[0]);                         // to read, MsByte first
-
 	if (HAL_SPI_Receive(&hspi2, Result.Byte, Len, SPI_TIMEOUT_MAX) != HAL_OK) {
 		HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Receive\r\n", 24, HAL_MAX_DELAY);
 	}
 
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 
-	return Result.Long;                                       // return the result
+	return Result.Long;
 }
+
+void SPIWriteRegisterDirect (unsigned short Address, unsigned long DataOut) {
+  ULONG Data;
+  UWORD Addr;
+  uint8_t Buffer[8] = {0};
+
+  Addr.Word = Address;
+  Data.Long = DataOut;
+
+  Buffer[0] = COMM_SPI_WRITE;
+  Buffer[1] = Addr.Byte[1];
+  Buffer[2] = Addr.Byte[0];
+  Buffer[3] = Data.Byte[0];
+  Buffer[4] = Data.Byte[1];
+  Buffer[5] = Data.Byte[2];
+  Buffer[6] = Data.Byte[3];
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+
+  if (HAL_SPI_Transmit(&hspi2, Buffer, 7, SPI_TIMEOUT_MAX) != HAL_OK) {
+	HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+  }
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+}
+
+unsigned long SPIReadRegisterIndirect (unsigned short Address, unsigned char Len) {
+  ULONG TempLong;
+  UWORD Addr;
+
+  Addr.Word = Address;
+
+  TempLong.Byte[0] = Addr.Byte[0];                          // address of the register
+  TempLong.Byte[1] = Addr.Byte[1];                          // to read, LsByte first
+  TempLong.Byte[2] = Len;                                   // number of bytes to read
+  TempLong.Byte[3] = ESC_READ;                              // ESC read
+  SPIWriteRegisterDirect (ECAT_CSR_CMD, TempLong.Long);
+
+  // wait for command execution
+  do {
+	TempLong.Long = SPIReadRegisterDirect(ECAT_CSR_CMD, 4);
+  } while(TempLong.Byte[3] & ECAT_CSR_BUSY);
+
+  TempLong.Long = SPIReadRegisterDirect(ECAT_CSR_DATA, Len); // read the requested register
+
+  return TempLong.Long;
+}
+
+void SPIWriteRegisterIndirect (unsigned long DataOut, unsigned short Address, unsigned char Len) {
+  ULONG TempLong;
+  UWORD Addr;
+
+  Addr.Word = Address;
+
+  SPIWriteRegisterDirect(ECAT_CSR_DATA, DataOut);            	// write the data
+
+  TempLong.Byte[0] = Addr.Byte[0];                            	// address of the register
+  TempLong.Byte[1] = Addr.Byte[1];                            	// to write, LsByte first
+  TempLong.Byte[2] = Len;                                     	// number of bytes to write
+  TempLong.Byte[3] = ESC_WRITE;                               	// ESC write
+
+  SPIWriteRegisterDirect(ECAT_CSR_CMD, TempLong.Long);       	// write the command
+
+  do {
+    TempLong.Long = SPIReadRegisterDirect(ECAT_CSR_CMD, 4);
+  } while (TempLong.Byte[3] & ECAT_CSR_BUSY);
+}
+
+#define FST_BYTE_NUM_ROUND_IN TOT_BYTE_NUM_IN
+/*
+ * From master
+ */
+void SPIWriteProcRamFifo() {
+  ULONG TempLong;
+  unsigned char i;
+  uint8_t Buffer[32] = {0};
+
+  // abort any possible pending transfer
+  SPIWriteRegisterDirect(ECAT_PRAM_WR_CMD, PRAM_ABORT);
+  SPIWriteRegisterDirect(ECAT_PRAM_WR_ADDR_LEN, (0x00001200 | (((uint32_t)TOT_BYTE_NUM_IN) << 16)));
+  // start command
+  SPIWriteRegisterDirect(ECAT_PRAM_WR_CMD, 0x80000000);
+
+  do {
+      TempLong.Long = SPIReadRegisterDirect (ECAT_PRAM_WR_CMD,2);
+  } while (TempLong.Byte[1] < (FST_BYTE_NUM_ROUND_IN/4));
+
+  Buffer[0] = COMM_SPI_WRITE;
+  Buffer[1] = 0x00; // address of the write fifo
+  Buffer[2] = 0x20; // MsByte first
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+
+  // transfer the data
+  for (i = 0; i < FST_BYTE_NUM_ROUND_IN; i++) {
+	  Buffer[3 + i] = BufferIn.Byte[i];
+  }
+
+  if (HAL_SPI_Transmit(&hspi2, Buffer, FST_BYTE_NUM_ROUND_IN + 3, SPI_TIMEOUT_MAX) != HAL_OK) {
+  	HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+  }
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+}
+
+#define FST_BYTE_NUM_ROUND_OUT TOT_BYTE_NUM_OUT
+/*
+ * To master
+ */
+void SPIReadProcRamFifo(void) {
+  ULONG TempLong;
+  unsigned char i;
+  uint8_t Buffer[32] = {0};
+
+  // abort any possible pending transfer
+  SPIWriteRegisterDirect (ECAT_PRAM_RD_CMD, PRAM_ABORT);
+  SPIWriteRegisterDirect (ECAT_PRAM_RD_ADDR_LEN, (0x00001000 | (((uint32_t)TOT_BYTE_NUM_OUT) << 16)));
+  // start command
+  SPIWriteRegisterDirect (ECAT_PRAM_RD_CMD, 0x80000000);
+
+  do {
+	TempLong.Long = SPIReadRegisterDirect (ECAT_PRAM_RD_CMD,2);
+  } while (TempLong.Byte[1] != (FST_BYTE_NUM_ROUND_OUT/4));
+
+  Buffer[0] = COMM_SPI_READ;
+  Buffer[1] = 0x00; // address of the read FIFO
+  Buffer[2] = 0x00; // FIFO MsByte first
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+
+  // write command
+  if (HAL_SPI_Transmit(&hspi2, Buffer, 3, SPI_TIMEOUT_MAX) != HAL_OK) {
+    HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+  }
+
+  if (HAL_SPI_Receive(&hspi2, BufferOut.Byte, FST_BYTE_NUM_ROUND_OUT, SPI_TIMEOUT_MAX) != HAL_OK) {
+  	HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Receive\r\n", 24, HAL_MAX_DELAY);
+  }
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -145,33 +338,82 @@ int main(void)
   MX_USART3_UART_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-  char buffer[32] = {0};
-  // uint8_t pin_state = 0;
 
-
+  char buffer[64] = {0};
   ULONG TempLong;
+  unsigned char WatchDog = 0;
+  unsigned char Operational = 0;
+  unsigned char Status;
+
   unsigned short i = 0;
   do {
+    TempLong.Long = SPIReadRegisterDirect (RESET_CTL, 4);
+    sprintf(buffer, "SPI# (RESET_CTL) 0x%08x \r\n", TempLong.Long);
+    HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
+    i++;
+  } while (((TempLong.Byte[0] & 0x01) != 0x00) && (i != Tout));
+
+  if (i == Tout) {
+	IsDeviceInitiated = 0x0;
+  }
+
+  i = 0;
+  do {
 	TempLong.Long = SPIReadRegisterDirect (BYTE_TEST, 4);
-	sprintf(buffer, "SPI# 0x%08x \r\n", TempLong.Long);
+	sprintf(buffer, "SPI# (BYTE_TEST) 0x%08x \r\n", TempLong.Long);
 	HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
 	i++;
-	// HAL_UART_Transmit(&huart3, (uint8_t *)TempLong.Byte, sizeof(TempLong.Byte), HAL_MAX_DELAY);
   } while ((TempLong.Long != 0x87654321) && (i != Tout));
+
+  if (i == Tout) {
+	IsDeviceInitiated = 0x0;
+  }
+
+  i = 0;
+  do {
+	TempLong.Long = SPIReadRegisterDirect (HW_CFG, 4);
+	sprintf(buffer, "SPI# (HW_CFG) 0x%08x \r\n", TempLong.Long);
+	HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
+	i++;
+  } while (((TempLong.Byte[3] & READY) == 0) && (i != Tout));
+
+  if (i == Tout) {
+    IsDeviceInitiated = 0x0;
+  }
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-	  memset(buffer, 0, 32);
-	  sprintf(buffer, "UART Test \r\n");
+  while (1) {
+	uint32_t current_tick = HAL_GetTick();
+	if (IsDeviceInitiated) {
+	  TempLong.Long = SPIReadRegisterIndirect(WDOG_STATUS, 1); // read the watchdog status
+	  if ((TempLong.Byte[0] & 0x01) == 0x01) {
+		  WatchDog = 0;	// set/reset the corresponding flag
+	  } else {
+		  WatchDog = 1;
+	  }
+
+	  TempLong.Long = SPIReadRegisterIndirect (AL_STATUS, 1);   // read the EtherCAT State Machine status
+	  Status = TempLong.Byte[0] & 0x0F;                         // to see if we are in operational state
+	  if (Status == ESM_OP) {
+		  Operational = 1;
+	  } else {
+		  Operational = 0;
+	  }
+
+	  memset(buffer, 0, 64);
+	  sprintf(buffer, "WatchDog: %d, Operational: %d\r\n", WatchDog, Operational);
 	  HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
-	  uint32_t current_tick = HAL_GetTick();
-	  // HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, pin_state);
-	  // pin_state = 1 - pin_state;
-	  while (HAL_GetTick() <= (current_tick + 500));
+	} else {
+		memset(buffer, 0, 64);
+		sprintf(buffer, "Something wrong, no communication with device\r\n");
+		HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
+	}
+
+	while (HAL_GetTick() <= (current_tick + 500));
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -243,7 +485,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.Mode = SPI_MODE_MASTER;
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
   hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
   hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
