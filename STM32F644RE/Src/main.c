@@ -67,6 +67,8 @@
 #define ECAT_PRAM_WR_CMD        	0x0314      			// EtherCAT Process RAM Write Command Register
 #define WDOG_STATUS             	0x0440      			// watch dog status
 
+#define DIGITAL_RST       			0x00000001
+
 #define ESM_INIT                	0x01          			// state machine control
 #define ESM_PREOP               	0x02          			// (state request)
 #define ESM_BOOT                	0x03          			//
@@ -124,6 +126,8 @@ unsigned long SPIReadRegisterDirect(unsigned short Address, unsigned char Len);
 void SPIWriteRegisterDirect (unsigned short Address, unsigned long DataOut);
 unsigned long SPIReadRegisterIndirect (unsigned short Address, unsigned char Len);
 void SPIWriteRegisterIndirect (unsigned long DataOut, unsigned short Address, unsigned char Len);
+void SPIWriteProcRamFifo(void);
+void SPIReadProcRamFifo(void);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -143,6 +147,7 @@ PROCBUFFER_IN 	BufferIn;
 unsigned long SPIReadRegisterDirect (unsigned short Address, unsigned char Len) {
 	ULONG Command, Result;
 	UWORD Addr;
+	char uartbuffer[64] = {0};
 
 	Addr.Word = Address;
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
@@ -152,11 +157,15 @@ unsigned long SPIReadRegisterDirect (unsigned short Address, unsigned char Len) 
 	Command.Byte[2] = Addr.Byte[0];
 
 	if (HAL_SPI_Transmit(&hspi2, Command.Byte, 3, SPI_TIMEOUT_MAX) != HAL_OK) {
-		HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+		memset(uartbuffer, 0, 64);
+		sprintf(uartbuffer, "ERROR# HAL_SPI_Transmit\r\n\r\n");
+		HAL_UART_Transmit(&huart3, (uint8_t *)uartbuffer, sizeof(uartbuffer), HAL_MAX_DELAY);
 	}
 
 	if (HAL_SPI_Receive(&hspi2, Result.Byte, Len, SPI_TIMEOUT_MAX) != HAL_OK) {
-		HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Receive\r\n", 24, HAL_MAX_DELAY);
+		memset(uartbuffer, 0, 64);
+		sprintf(uartbuffer, "ERROR# HAL_SPI_Receive\r\n\r\n");
+		HAL_UART_Transmit(&huart3, (uint8_t *)uartbuffer, sizeof(uartbuffer), HAL_MAX_DELAY);
 	}
 
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
@@ -168,6 +177,7 @@ void SPIWriteRegisterDirect (unsigned short Address, unsigned long DataOut) {
   ULONG Data;
   UWORD Addr;
   uint8_t Buffer[8] = {0};
+  char uartbuffer[64] = {0};
 
   Addr.Word = Address;
   Data.Long = DataOut;
@@ -183,7 +193,9 @@ void SPIWriteRegisterDirect (unsigned short Address, unsigned long DataOut) {
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 
   if (HAL_SPI_Transmit(&hspi2, Buffer, 7, SPI_TIMEOUT_MAX) != HAL_OK) {
-	HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+	memset(uartbuffer, 0, 64);
+	sprintf(uartbuffer, "ERROR# HAL_SPI_Transmit\r\n\r\n");
+	HAL_UART_Transmit(&huart3, (uint8_t *)uartbuffer, sizeof(uartbuffer), HAL_MAX_DELAY);
   }
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
@@ -239,10 +251,11 @@ void SPIWriteRegisterIndirect (unsigned long DataOut, unsigned short Address, un
 /*
  * From master
  */
-void SPIWriteProcRamFifo() {
+void SPIWriteProcRamFifo(void) {
   ULONG TempLong;
   unsigned char i;
   uint8_t Buffer[32] = {0};
+  char uartbuffer[64] = {0};
 
   // abort any possible pending transfer
   SPIWriteRegisterDirect(ECAT_PRAM_WR_CMD, PRAM_ABORT);
@@ -265,9 +278,15 @@ void SPIWriteProcRamFifo() {
   
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
   if (HAL_SPI_Transmit(&hspi2, Buffer, FST_BYTE_NUM_ROUND_IN + 3, SPI_TIMEOUT_MAX) != HAL_OK) {
-  	HAL_UART_Transmit(&huart3, (uint8_t *)"ERROR# HAL_SPI_Transmit\r\n", 25, HAL_MAX_DELAY);
+	memset(uartbuffer, 0, 64);
+	sprintf(uartbuffer, "ERROR# HAL_SPI_Transmit\r\n\r\n");
+	HAL_UART_Transmit(&huart3, (uint8_t *)uartbuffer, sizeof(uartbuffer), HAL_MAX_DELAY);
   }
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+
+  memset(uartbuffer, 0, 64);
+  sprintf(uartbuffer, ">TRANSMIT\r\n");
+  HAL_UART_Transmit(&huart3, (uint8_t *)uartbuffer, sizeof(uartbuffer), HAL_MAX_DELAY);
 }
 
 #define FST_BYTE_NUM_ROUND_OUT TOT_BYTE_NUM_OUT
@@ -348,6 +367,8 @@ int main(void)
   unsigned char Operational = 0;
   unsigned char Status;
 
+  SPIWriteRegisterDirect (RESET_CTL, DIGITAL_RST);
+
   unsigned short i = 0;
   do {
     TempLong.Long = SPIReadRegisterDirect (RESET_CTL, 4);
@@ -409,7 +430,7 @@ int main(void)
 	  SPIWriteProcRamFifo();
 
 	  memset(buffer, 0, 64);
-	  sprintf(buffer, "WatchDog: %d, Operational: %d\r\n", WatchDog, Operational);
+	  sprintf(buffer, "WatchDog: %d, Operational: %d (STATUS:0x%08x)\r\n", WatchDog, Operational, Status);
 	  HAL_UART_Transmit(&huart3, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
 	} else {
 		memset(buffer, 0, 64);
