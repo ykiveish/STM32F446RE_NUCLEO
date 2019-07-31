@@ -1,7 +1,7 @@
 [PreviousGenFiles]
-HeaderPath=C:/Users/kiveisha/workspace/STM32F644RE/Inc
+HeaderPath=C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Inc
 HeaderFiles=stm32f4xx_it.h;stm32f4xx_hal_conf.h;main.h;
-SourcePath=C:/Users/kiveisha/workspace/STM32F644RE/Src
+SourcePath=C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Src
 SourceFiles=stm32f4xx_it.c;stm32f4xx_hal_msp.c;main.c;
 
 [PreviousLibFiles]

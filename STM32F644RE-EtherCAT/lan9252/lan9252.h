@@ -6,5 +6,6 @@
 
 void init9252(spiCTX* ctx);
 void app(spiCTX* ctx);
+void sendSensorOne(spiCTX* ctx);
 
 #endif

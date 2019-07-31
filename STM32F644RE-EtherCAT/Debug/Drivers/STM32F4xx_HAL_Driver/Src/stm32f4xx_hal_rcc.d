@@ -26,6 +26,8 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.o: \
  C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h \
  C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h \
  C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h \
+ C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h \
+ C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h \
  C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
 
 C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
@@ -79,5 +81,9 @@ C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/In
 C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h:
 
 C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h:
+
+C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h:
+
+C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h:
 
 C:/Users/kiveisha/workspace/STM32F644RE-EtherCAT/Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h:

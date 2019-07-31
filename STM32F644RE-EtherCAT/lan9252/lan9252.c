@@ -62,6 +62,22 @@ void printBufferToUart(spiCTX* ctx) {
 	HAL_UART_Transmit(ctx->uart, (uint8_t *)buffer, sizeof(buffer), HAL_MAX_DELAY);
 }
 
+int direction = -1;
+uint64_t indexer = 0;
+uint16_t value = 0;
+void sendSensorOne(spiCTX* ctx) {
+	if (200 == value && direction == 1) {
+		direction = -1;
+	} else if (0 == value && direction == -1) {
+		direction = 1;
+	}
+
+	value = (indexer % 200) * direction;
+
+	ctx->bIn->Cust.Analog_0 = value;
+	SPIWriteProcRamFifo(ctx);
+}
+
 void app(spiCTX* ctx) {
 	char buffer[128] = {0};
 	ULONG TempLong;
@@ -86,7 +102,16 @@ void app(spiCTX* ctx) {
 
 		SPIReadProcRamFifo(ctx);
 
-		ctx->bIn->Cust.Analog_0 = 100;
+		if (60000 == value && direction == 1) {
+			direction = -1;
+		} else if (0 == value && direction == -1) {
+			direction = 1;
+		}
+
+		value += 5000 * direction;
+
+		ctx->bIn->Cust.Analog_0 = value;
+		// ctx->bIn->Cust.Analog_0 = 100;
 		ctx->bIn->Cust.Analog_1 = 200;
 		ctx->bIn->Cust.Bit16_RisingTestRamp = 300;
 		ctx->bIn->Cust.Bit8_FallingTestRamp = 10;
