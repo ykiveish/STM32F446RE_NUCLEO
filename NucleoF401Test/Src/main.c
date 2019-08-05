@@ -33,7 +33,25 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NRB_OF_CONVERSION 16
+#define NRB_OF_CONVERSION 		16
+#define WINDOW_SIZE 			6
+#define SAMPLE_NOISE_THRESHOLD 	50
+#define DATA_THRESHOLD 			180
+#define NO_DATA_THRESHOLD		70
+
+typedef struct {
+	int		 	SignalAVG;
+	int		 	SignalSum;
+	uint32_t	SamplesCount;
+} DSPContext;
+
+typedef struct {
+	int 		Sum;
+	uint32_t	LeftIndex;
+	uint32_t	RightIndex;
+	int			LeftItem;
+	int			RightItem;
+} SampleWindow;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,12 +72,15 @@ uint8_t BufferReadyToProcess = 0x0;
 
 uint8_t adc_buffer[NRB_OF_CONVERSION];
 uint8_t data_to_process[2][2048];
-uint8_t temp_buffer[2048];
+uint8_t dsp_buffers[2][2048];
+short diffSignalBuffer[2048];
+short temp_buffer_3[2048];
 
 uint16_t data_to_process_index = 0;
 uint8_t buffer_index = 0;
 uint8_t irq_data_from_dac = 0x0;
 uint8_t packets_count = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,11 +111,187 @@ void ProcessDMADone(void) {
 	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_1,0);
 }
 
+void MoveWindowRight(uint8_t* buffer, SampleWindow * window, uint16_t sample) {
+	if (window->RightIndex - window->LeftIndex > WINDOW_SIZE) {
+		window->LeftIndex++;
+		window->LeftItem = buffer[window->LeftIndex];
+	}
+
+	if (window->RightIndex > WINDOW_SIZE) {
+		window->Sum -= window->LeftItem;
+	}
+
+	window->Sum += sample;
+	window->RightIndex++;
+}
+
+void AdvancedDSP(void) { /*
+	SampleWindow RightWindow = {};
+	SampleWindow LeftWindow  = {};
+	DSPContext	 Context	 = {};
+
+	Context.SamplesCount = 0;
+	Context.SignalAVG = 0;
+	Context.SignalSum = 0;
+
+	RightWindow.LeftIndex = 0;
+	RightWindow.LeftItem = 0;
+	RightWindow.RightIndex = 0;
+	RightWindow.RightItem = 0;
+	RightWindow.Sum = 0;
+
+	LeftWindow.LeftIndex = 0;
+	LeftWindow.LeftItem = 0;
+	LeftWindow.RightIndex = 0;
+	LeftWindow.RightItem = 0;
+	LeftWindow.Sum = 0;
+
+	int MaxDiffPositive = 0;
+	int MaxDiffNegative = 0;
+	int MinDiffPositive = 0;
+	int MinDiffNegative = 0;
+
+	// Window summary difference signal
+	for (uint16_t idx = 0; idx < 2048; idx++) {
+		MoveWindowRight(ptrRawBuffer, &RightWindow, ptrRawBuffer[idx]);
+
+		if (RightWindow.LeftIndex - LeftWindow.RightIndex == 1) {
+			MoveWindowRight(ptrRawBuffer, &LeftWindow, ptrRawBuffer[idx - WINDOW_SIZE]);
+		}
+
+		if (ptrRawBuffer[idx] > SAMPLE_NOISE_THRESHOLD) {
+			Context.SignalSum += ptrRawBuffer[idx];
+			Context.SamplesCount++;
+		}
+
+		diffSignalBuffer[idx] = RightWindow.Sum - LeftWindow.Sum;
+		if (diffSignalBuffer[idx] > 0) {
+			if (diffSignalBuffer[idx] > MaxDiffPositive) {
+				MaxDiffPositive = diffSignalBuffer[idx];
+			}
+
+			if (diffSignalBuffer[idx] < MinDiffPositive) {
+
+			}
+		} else {
+			if (diffSignalBuffer[idx] < MaxDiffNegative) {
+				MaxDiffNegative = diffSignalBuffer[idx];
+			}
+		}
+	}
+
+	Context.SignalAVG = Context.SignalSum / Context.SamplesCount;
+
+	ptrRawBuffer = &dsp_buffers[0][0];
+	for (uint16_t idx = 0; idx < 2048; idx++) {
+		ptrRawBuffer[idx] = ((float)((float)(diffSignalBuffer[idx]) / (float)1000.0) * 100.0) + 100;
+	}
+
+	for (uint16_t idx = 0; idx < 2048; idx++) {
+		if (diffSignalBuffer[idx] > 0) {
+			if (diffSignalBuffer[idx] > MaxDiffPositive) {
+				MaxDiffPositive = diffSignalBuffer[idx];
+			}
+		} else {
+			if (diffSignalBuffer[idx] < MaxDiffNegative) {
+				MaxDiffNegative = diffSignalBuffer[idx];
+			}
+		}
+
+
+		if (diffSignalBuffer[idx] > Context.SignalAVG) {
+			temp_buffer_3[idx] = Context.SignalAVG;
+		} else if (diffSignalBuffer[idx] < -Context.SignalAVG) {
+			temp_buffer_3[idx] = 0 - Context.SignalAVG;
+		} else {
+			temp_buffer_3[idx] = 0;
+		}
+	}
+
+	for (uint16_t idx = 0; idx < 2048; idx++) {
+		temp_buffer[idx] = ((float)((float)(temp_buffer_3[idx]) / (float)1000.0) * 100.0) + 100;
+	}
+
+	uint8_t isPulse 			= 0x0;
+	uint16_t pulseSampleCount 	= 0;
+	uint16_t pulseLeftIndex 	= 0;
+	int prevSample 				= temp_buffer_3[0];
+
+	for (uint16_t idx = 1; idx < 2048; idx++) {
+		if (temp_buffer_3[idx] != prevSample) {
+			if (!prevSample) {
+				if (temp_buffer_3[idx] > 0) {
+					temp_buffer[idx - 1] = 50;
+					if (isPulse == 0x0) {
+						pulseLeftIndex = idx -1;
+					}
+					isPulse = 0x1;
+					pulseSampleCount++;
+				} else {
+					temp_buffer[idx - 1] = 50;
+					isPulse = 0x1;
+					pulseSampleCount++;
+				}
+			} else if (prevSample > 0) {
+				if (temp_buffer_3[idx] == 0) {
+					temp_buffer[idx - 1] = 50;
+					isPulse = 0x1;
+					pulseSampleCount++;
+				}
+			} else if (prevSample < 0) {
+				if (temp_buffer_3[idx] == 0) {
+					temp_buffer[idx - 1] = 0;
+					isPulse = 0x0;
+					pulseLeftIndex 		= 0;
+					pulseSampleCount 	= 0;
+				}
+			}
+		} else {
+			if (!prevSample) {
+				if (isPulse == 0x1) {
+					temp_buffer[idx - 1] = 50;
+					pulseSampleCount++;
+				} else {
+					temp_buffer[idx - 1] = 0;
+				}
+			} else {
+				temp_buffer[idx - 1] = 50;
+			}
+		}
+		prevSample = temp_buffer_3[idx];
+	}
+*/ }
+
 void ProcessWindowData(void) {
-	memcpy(temp_buffer, &data_to_process[buffer_index][0], 2048);
-	HAL_UART_Transmit_DMA(&huart1, temp_buffer, 2048);
+	memcpy(&dsp_buffers[0][0], &data_to_process[buffer_index][0], 2048);
+	uint8_t* ptrRawBuffer = &dsp_buffers[0][0];
+
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_2,1);
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_2,0);
+
+	uint8_t state = 0x0;
+	uint8_t* ptrOutBuffer = &dsp_buffers[1][0];
+	for (uint16_t idx = 0; idx < 2048; idx++) {
+		if (0x1 == state || 0x0 == state) {
+			if (DATA_THRESHOLD < ptrRawBuffer[idx]) {
+				ptrOutBuffer[idx] = 25;
+				state = 0x2;
+			} else {
+				ptrOutBuffer[idx] = 0;
+			}
+		} else if (0x2 == state) {
+			if (NO_DATA_THRESHOLD > ptrRawBuffer[idx]) {
+				ptrOutBuffer[idx] = 0;
+				state = 0x1;
+			} else {
+				ptrOutBuffer[idx] = 25;
+			}
+		}
+	}
+
+	HAL_UART_Transmit_DMA(&huart1, ptrOutBuffer, 2048);
 	// Data processing section
-	for (uint16_t idx = 0; idx < 2048; idx++){
+	for (uint16_t idx = 0; idx < 3; idx++){
 		HAL_GPIO_WritePin(GPIOC,GPIO_PIN_2,1);
 		HAL_GPIO_WritePin(GPIOC,GPIO_PIN_2,0);
 	}
@@ -152,7 +349,6 @@ int main(void)
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   // HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buffer, NRB_OF_CONVERSION);
-  HAL_UART_Transmit_DMA(&huart1, temp_buffer, 2048);
   /* USER CODE END 2 */
 
   /* Infinite loop */
