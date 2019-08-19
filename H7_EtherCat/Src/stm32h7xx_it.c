@@ -1,7 +1,7 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file    stm32f4xx_it.c
+  * @file    stm32h7xx_it.c
   * @brief   Interrupt Service Routines.
   ******************************************************************************
   * @attention
@@ -20,7 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stm32f4xx_it.h"
+#include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -42,12 +42,12 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-extern uint8_t irq_data_from_dac;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
-extern void ProcessDMADone(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -56,16 +56,13 @@ extern void ProcessDMADone(void);
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-extern DMA_HandleTypeDef hdma_adc1;
-extern ADC_HandleTypeDef hadc1;
-extern DMA_HandleTypeDef hdma_usart1_tx;
-extern UART_HandleTypeDef huart1;
+
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
 
 /******************************************************************************/
-/*           Cortex-M4 Processor Interruption and Exception Handlers          */ 
+/*           Cortex Processor Interruption and Exception Handlers          */ 
 /******************************************************************************/
 /**
   * @brief This function handles Non maskable interrupt.
@@ -194,83 +191,11 @@ void SysTick_Handler(void)
 }
 
 /******************************************************************************/
-/* STM32F4xx Peripheral Interrupt Handlers                                    */
+/* STM32H7xx Peripheral Interrupt Handlers                                    */
 /* Add here the Interrupt Handlers for the used peripherals.                  */
 /* For the available peripheral interrupt handler names,                      */
-/* please refer to the startup file (startup_stm32f4xx.s).                    */
+/* please refer to the startup file (startup_stm32h7xx.s).                    */
 /******************************************************************************/
-
-/**
-  * @brief This function handles EXTI line0 interrupt.
-  */
-void EXTI0_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI0_IRQn 0 */
-	irq_data_from_dac = 0x1;
-  /* USER CODE END EXTI0_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
-  /* USER CODE BEGIN EXTI0_IRQn 1 */
-
-  /* USER CODE END EXTI0_IRQn 1 */
-}
-
-/**
-  * @brief This function handles ADC1 global interrupt.
-  */
-void ADC_IRQHandler(void)
-{
-  /* USER CODE BEGIN ADC_IRQn 0 */
-	// HAL_GPIO_WritePin(GPIOA,GPIO_PIN_4,1);
-	// HAL_GPIO_WritePin(GPIOA,GPIO_PIN_4,0);
-  /* USER CODE END ADC_IRQn 0 */
-  HAL_ADC_IRQHandler(&hadc1);
-  /* USER CODE BEGIN ADC_IRQn 1 */
-
-  /* USER CODE END ADC_IRQn 1 */
-}
-
-/**
-  * @brief This function handles USART1 global interrupt.
-  */
-void USART1_IRQHandler(void)
-{
-  /* USER CODE BEGIN USART1_IRQn 0 */
-
-  /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
-  /* USER CODE BEGIN USART1_IRQn 1 */
-
-  /* USER CODE END USART1_IRQn 1 */
-}
-
-/**
-  * @brief This function handles DMA2 stream4 global interrupt.
-  */
-void DMA2_Stream4_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA2_Stream4_IRQn 0 */
-	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_1,1);
-	ProcessDMADone();
-  /* USER CODE END DMA2_Stream4_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_adc1);
-  /* USER CODE BEGIN DMA2_Stream4_IRQn 1 */
-
-  /* USER CODE END DMA2_Stream4_IRQn 1 */
-}
-
-/**
-  * @brief This function handles DMA2 stream7 global interrupt.
-  */
-void DMA2_Stream7_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA2_Stream7_IRQn 0 */
-
-  /* USER CODE END DMA2_Stream7_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_tx);
-  /* USER CODE BEGIN DMA2_Stream7_IRQn 1 */
-
-  /* USER CODE END DMA2_Stream7_IRQn 1 */
-}
 
 /* USER CODE BEGIN 1 */
 
